@@ -11,33 +11,74 @@ public class PBD_model: MonoBehaviour {
 	float		damping= 0.99f;
 	float Un = 0.5f;
 	float Ut = 0.9f;
+	static int n = 21;
+	int SIZE = n * n;
 
 	int[] 		E;
 	float[] 	L;
-	Vector3[] 	V;
-	Vector3[] X;
+	int[] sum_n;
 
+	Vector3[] V;
+	Vector3[] Sum_X;
+	Vector3[] X;
 	//Vector3[]	D;
 	Vector3 g = new Vector3(0, -9.80f, 0);
 
 
 	#region ComputeShader
 	int kernelHandle;
+	int kernelHandle1;
+
+	ComputeBuffer XBuffer;
+	ComputeBuffer Sum_xBuffer;
+	ComputeBuffer VBuffer;
+	ComputeBuffer EBuffer;
+	ComputeBuffer LBuffer;
+	ComputeBuffer Sum_nBuffer;
 	void InitData()
 	{
 		kernelHandle = shader.FindKernel("CSMain");
+		kernelHandle1 = shader.FindKernel("CSMain1");
 
+		XBuffer = new ComputeBuffer(SIZE, 3 * sizeof(float));
+		XBuffer.SetData(X);
+		shader.SetBuffer(kernelHandle, "X", XBuffer);
+		shader.SetBuffer(kernelHandle1, "X", XBuffer);
+
+		Sum_xBuffer = new ComputeBuffer(SIZE, 3 * sizeof(float));
+		Sum_xBuffer.SetData(Sum_X);
+		shader.SetBuffer(kernelHandle, "Sum_X", Sum_xBuffer);
+		shader.SetBuffer(kernelHandle1, "Sum_X", Sum_xBuffer);
+
+		VBuffer = new ComputeBuffer(SIZE, 3 * sizeof(float));
+		VBuffer.SetData(V);
+		shader.SetBuffer(kernelHandle, "V", VBuffer);
+		shader.SetBuffer(kernelHandle1, "V", VBuffer);
+
+		EBuffer = new ComputeBuffer(E.Length, sizeof(int));
+		EBuffer.SetData(E);
+		shader.SetBuffer(kernelHandle, "E", EBuffer);
+		shader.SetBuffer(kernelHandle1, "E", EBuffer);
+
+		LBuffer = new ComputeBuffer(L.Length, sizeof(float));
+		LBuffer.SetData(L);
+		shader.SetBuffer(kernelHandle, "L", LBuffer);
+		shader.SetBuffer(kernelHandle1, "L", LBuffer);
+
+		Sum_nBuffer = new ComputeBuffer(sum_n.Length, sizeof(int));
+		Sum_nBuffer.SetData(sum_n);
+		shader.SetBuffer(kernelHandle, "Sum_n", Sum_nBuffer);
+		shader.SetBuffer(kernelHandle1, "Sum_n", Sum_nBuffer);
 	}
-    #endregion
+	#endregion
 
 
-    // Use this for initialization
-    void Start () 
+	// Use this for initialization
+	void Start () 
 	{
 		Mesh mesh = GetComponent<MeshFilter> ().mesh;
 		//Resize the mesh.
-		int n=21;
-		Vector3[] X  	= new Vector3[n*n];
+		X  	= new Vector3[n*n];
 		Vector2[] UV 	= new Vector2[n*n];
 		int[] T	= new int[(n-1)*(n-1)*6];
 		for(int j=0; j<n; j++)
@@ -108,9 +149,13 @@ public class PBD_model: MonoBehaviour {
 		for (int i=0; i<X.Length; i++)
 			V[i] = new Vector3 (0, 0, 0);
 
-		X = mesh.vertices;
-		Debug.Log(E.Length);
-		Debug.Log(L.Length);
+		sum_n = new int[mesh.vertices.Length];
+		Sum_X = new Vector3[mesh.vertices.Length];
+		Debug.Log(X.Length);
+		//Debug.Log(E.Length);
+		//Debug.Log(L.Length);
+
+		InitData();
     }
 
 	void Quick_Sort(ref int[] a, int l, int r)
@@ -153,40 +198,56 @@ public class PBD_model: MonoBehaviour {
 
 	void Strain_Limiting()
 	{
-		Mesh mesh = GetComponent<MeshFilter> ().mesh;
-		Vector3[] vertices = mesh.vertices;
 
-        //Apply PBD here.
-        //...
-        Vector3[] X = new Vector3[vertices.Length];
-        int[] sum_n = new int[vertices.Length];
-        for (int i = 0; i < L.Length; i++)
-        {
-            int ii = E[2 * i];
-            int jj = E[2 * i + 1];
-            Vector3 Xij = (vertices[ii] - vertices[jj]).normalized;
-            X[ii] = X[ii] + 0.5f * (vertices[ii] + vertices[jj] + L[i] * Xij);
-            X[jj] = X[jj] + 0.5f * (vertices[ii] + vertices[jj] - L[i] * Xij);
-            sum_n[ii]++;
-            sum_n[jj]++;
-        }
-        for (int i = 0; i < X.Length; i++)
-        {
-            if (i == 0 || i == 20) continue;
+		//Apply PBD here.
+		//...
+		//for (int i = 0; i < L.Length; i++)
+		//{
+		//    int ii = E[2 * i];
+		//    int jj = E[2 * i + 1];
+		//    Vector3 Xij = (X[ii] - X[jj]).normalized;
+		//    Sum_X[ii] = Sum_X[ii] + 0.5f * (X[ii] + X[jj] + L[i] * Xij);
+		//    Sum_X[jj] = Sum_X[jj] + 0.5f * (X[ii] + X[jj] - L[i] * Xij);
+		//    sum_n[ii]++;
+		//    sum_n[jj]++;
+		//}
+		for (int k = 0; k < 32; k++)
+		{
+			for (int i = 0; i < Sum_X.Length; i++)
+			{
+				for (int j = 0; j < L.Length; j++)
+				{
+					if (E[2 * j] == i)
+					{
+						int ii = E[2 * j];
+						int jj = E[2 * j + 1];
+						Vector3 Xij = (X[ii] - X[jj]).normalized;
+						Sum_X[ii] = Sum_X[ii] + 0.5f * (X[ii] + X[jj] + L[j] * Xij);
+						sum_n[ii]++;
+					}
+					else if (E[2 * j + 1] == i)
+					{
+						int ii = E[2 * j];
+						int jj = E[2 * j + 1];
+						Vector3 Xij = (X[ii] - X[jj]).normalized;
+						Sum_X[jj] = Sum_X[jj] + 0.5f * (X[ii] + X[jj] - L[j] * Xij);
+						sum_n[jj]++;
+					}
+				}
+				if (i == 0 || i == 20) continue;
 
-            Vector3 newXi = (0.5f * vertices[i] + X[i]) / (0.5f + sum_n[i]);
-            V[i] = V[i] + (newXi - vertices[i]) / t;
-            vertices[i] = newXi;
-        }
-
-        mesh.vertices = vertices;
-	}
+				Vector3 newXi = (0.5f * X[i] + Sum_X[i]) / (0.5f + sum_n[i]);
+				V[i] = V[i] + (newXi - X[i]) / t;
+				X[i] = newXi;
+				Sum_X[i] = Vector3.zero;
+				sum_n[i] = 0;
+			}
+		}
+    }
 
 	void Collision_Handling()
 	{
 		sphereCenter = sphereTrans.position;
-		Mesh mesh = GetComponent<MeshFilter> ().mesh;
-		Vector3[] X = mesh.vertices;
 		//For every vertex, detect collision and apply impulse if needed.
 		//...
 		for (int i = 0; i < X.Length; i++)
@@ -214,31 +275,62 @@ public class PBD_model: MonoBehaviour {
 				}
 			}
 		}
-		mesh.vertices = X;
 	}
 
 	// Update is called once per frame
+	int num = 0;
 	void Update () 
 	{
+		num++;
 		Mesh mesh = GetComponent<MeshFilter> ().mesh;
-		Vector3[] X = mesh.vertices;
+		X = mesh.vertices;
 		for(int i=0; i<X.Length; i++)
 		{
-			if(i==0 || i==20)	continue;
+			if(i<=20)	continue;
 			//Initial Setup
 			//...
 			V[i] = V[i] + g * t;
 			X[i] = X[i] + V[i] * t;
 			V[i] *= damping;
 		}
+
+		//for(int l=0; l<32; l++)
+			//Strain_Limiting ();
+
+		
+		XBuffer.SetData(X);
+		VBuffer.SetData(V);
+		//Sum_xBuffer.SetData(Sum_X);
+		//Sum_nBuffer.SetData(sum_n);
+		shader.SetBuffer(kernelHandle1, "X", XBuffer);
+		shader.SetBuffer(kernelHandle1, "V", VBuffer);
+		//shader.SetBuffer(kernelHandle1, "Sum_X", Sum_xBuffer);
+		//shader.SetBuffer(kernelHandle1, "Sum_n", Sum_nBuffer);
+		
+		//shader.Dispatch(kernelHandle, L.Length, 1, 1);
+		for(int i =0; i<16;i++)
+		shader.Dispatch(kernelHandle1, SIZE, 1, 1);
+		XBuffer.GetData(X);
+		VBuffer.GetData(V);
+		Collision_Handling();
+
 		mesh.vertices = X;
 
-		for(int l=0; l<32; l++)
-			Strain_Limiting ();
 
-		Collision_Handling ();
 
-		mesh.RecalculateNormals ();
+
+		mesh.RecalculateNormals();
+		//sum_n = new int[mesh.vertices.Length];
+		//Sum_X = new Vector3[mesh.vertices.Length];
+
+
+
+		//XBuffer.GetData(X);
+		//VBuffer.GetData(V);
+
+		//V = V;
+		//mesh.vertices = X;
+		//mesh.RecalculateNormals();
 
 	}
 

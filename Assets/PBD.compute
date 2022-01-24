@@ -1,5 +1,6 @@
 ﻿// Each #kernel tells which function to compile; you can have many kernels
 #pragma kernel CSMain
+#pragma kernel CSMain1
 
 float delta;
 float radius;
@@ -11,19 +12,65 @@ struct Vertex
 RWStructuredBuffer<Vertex> vertexBuffer;
 StructuredBuffer<Vertex> initialBuffer;
 
+RWStructuredBuffer<float3> X;
+RWStructuredBuffer<float3> V;
+
+StructuredBuffer<int> E;
+StructuredBuffer<float> L;
+
+RWStructuredBuffer<int> Sum_n;
+RWStructuredBuffer<float3> Sum_X;
+
+
 [numthreads(1, 1, 1)]
 void CSMain(uint3 id : SV_DispatchThreadID)
 {
-    float3 initialPos = initialBuffer[id.x].position;
-    float3 s = float3(normalize(initialPos) * radius * 0.01);
-    float3 pos = lerp(initialPos, s, delta);
-    
-    float3 initialNormal = initialBuffer[id.x].normal;
-    float3 snormal = normalize(initialPos);
-    float3 norm = lerp(initialNormal, snormal, delta);
-    
-    vertexBuffer[id.x].normal = norm;
-    vertexBuffer[id.x].position = pos;
-    //vertexBuffer[id.x].position = float3(delta, delta, delta);
+    int i = id.x;
+    int ii = E[2 * i];
+    int jj = E[2 * i + 1];
+    float3 Xij = normalize(X[ii] - X[jj]);
+    Sum_X[ii] = Sum_X[ii] + 0.5f * (X[ii] + X[jj] + L[i] * Xij);
+    Sum_X[jj] = Sum_X[jj] + 0.5f * (X[ii] + X[jj] - L[i] * Xij);
+    Sum_n[ii]++;
+    Sum_n[jj]++;
+    //X[id.x] += float3(1, 1, 1);
+}
 
+[numthreads(1, 1, 1)]
+void CSMain1(uint3 id : SV_DispatchThreadID)
+{
+    float t = 0.0333f;
+    int i = id.x;
+    
+        for (int j = 0; j < 1240; j++)
+        {
+            if (E[2 * j] == i)
+            {
+                int ii = E[2 * j];
+                int jj = E[2 * j + 1];
+                float3 Xij = normalize(X[ii] - X[jj]);
+                Sum_X[ii] = Sum_X[ii] + 0.5f * (X[ii] + X[jj] + L[j] * Xij);
+                Sum_n[ii]++;
+ 
+            }
+            else if (E[2 * j + 1] == i)
+            {
+                int ii = E[2 * j];
+                int jj = E[2 * j + 1];
+                float3 Xij = normalize(X[ii] - X[jj]);
+                Sum_X[jj] = Sum_X[jj] + 0.5f * (X[ii] + X[jj] - L[j] * Xij);
+                Sum_n[jj]++;
+            }
+        }
+        if (i == 0 || i == 20)
+            return;
+        float3 newXi = (0.5f * X[i] + Sum_X[i]) / (0.5f + Sum_n[i]);
+        V[i] = V[i] + (newXi - X[i]) / t;
+        X[i] = newXi;
+    //V[i] = float3(Sum_n[i], 0,0);
+    //X[i] = Sum_X[i];
+        Sum_X[i] = float3(0, 0, 0);
+        Sum_n[i] = 0;
+    
+    //X[id.x] -= float3(1, 1, 1);
 }
