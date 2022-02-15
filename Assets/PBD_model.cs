@@ -16,6 +16,7 @@ public class PBD_model: MonoBehaviour {
 	float[] 	L;
 	Vector3[] 	V;
 	Vector3[] X;
+	float lambda = 0.0f;
 
 	//Vector3[]	D;
 	Vector3 g = new Vector3(0, -9.80f, 0);
@@ -174,14 +175,61 @@ public class PBD_model: MonoBehaviour {
         {
             if (i == 0 || i == 20) continue;
 
-            Vector3 newXi = (0.5f * vertices[i] + X[i]) / (0.5f + sum_n[i]);
+            Vector3 newXi = (0.2f * vertices[i] + X[i]) / (0.2f + sum_n[i]);
             V[i] = V[i] + (newXi - vertices[i]) / t;
             vertices[i] = newXi;
         }
 
         mesh.vertices = vertices;
 	}
+	void GS_ConstraintProjection(Vector3[] XX)
+	{
+		Mesh mesh = GetComponent<MeshFilter>().mesh;
+		Vector3[] vertices = XX;
 
+		//Apply PBD here.
+		Vector3[] X = new Vector3[vertices.Length];
+		for (int i = 0; i < L.Length; i++)
+		{
+			
+
+			int ii = E[2 * i];
+            int jj = E[2 * i + 1];
+
+            Vector3 Xij = (vertices[jj] - vertices[ii]);
+			float l0 = Xij.magnitude;
+			float s = 1.0f / (2.0f + lambda / t);
+			if (ii != 0 && ii != 20)
+				vertices[ii] -= s*(L[i] - l0) * Xij.normalized;
+
+			if (jj != 0 && jj != 20)
+				vertices[jj] += s*(L[i] -l0) * Xij.normalized;
+		}
+	}
+	void Jacobi_ConstraintProjection(Vector3[] XX)
+	{
+		Mesh mesh = GetComponent<MeshFilter>().mesh;
+		Vector3[] vertices = XX;
+
+		//Apply PBD here.
+		Vector3[] X = new Vector3[vertices.Length];
+		for (int i = 0; i < L.Length; i++)
+		{
+
+
+			int ii = E[2 * i];
+			int jj = E[2 * i + 1];
+
+			Vector3 Xij = (XX[jj] - XX[ii]);
+			float l0 = Xij.magnitude;
+			float s = 1.0f / (2.0f + lambda / t);
+			if (ii != 0 && ii != 20)
+				vertices[ii] -= s * (L[i] - l0) * Xij.normalized;
+
+			if (jj != 0 && jj != 20)
+				vertices[jj] += s * (L[i] - l0) * Xij.normalized;
+		}
+	}
 	void Collision_Handling()
 	{
 		sphereCenter = sphereTrans.position;
@@ -231,12 +279,22 @@ public class PBD_model: MonoBehaviour {
 			X[i] = X[i] + V[i] * t;
 			V[i] *= damping;
 		}
+
+		for (int l = 0; l < 4; l++)
+		{
+			//Jacobi_ConstraintProjection(X);
+			GS_ConstraintProjection(X);
+		}
+
+		Vector3[] pre_X = mesh.vertices;
+
+		for (int i = 0; i < X.Length; i++)
+		{
+			V[i] = (X[i] - pre_X[i]) / t;
+		}
 		mesh.vertices = X;
 
-		for(int l=0; l<32; l++)
-			Strain_Limiting ();
-
-		Collision_Handling ();
+		Collision_Handling();
 
 		mesh.RecalculateNormals ();
 
