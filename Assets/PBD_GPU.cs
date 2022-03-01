@@ -1,7 +1,7 @@
 ﻿using UnityEngine;
 using System.Collections;
 
-public class PBD_model: MonoBehaviour {
+public class PBD_GPU: MonoBehaviour {
 
 	public ComputeShader shader;
 	public Transform sphereTrans;
@@ -300,14 +300,8 @@ public class PBD_model: MonoBehaviour {
 		
 		XBuffer.SetData(X);
 		VBuffer.SetData(V);
-		//Sum_xBuffer.SetData(Sum_X);
-		//Sum_nBuffer.SetData(sum_n);
 		shader.SetBuffer(kernelHandle1, "X", XBuffer);
 		shader.SetBuffer(kernelHandle1, "V", VBuffer);
-		//shader.SetBuffer(kernelHandle1, "Sum_X", Sum_xBuffer);
-		//shader.SetBuffer(kernelHandle1, "Sum_n", Sum_nBuffer);
-		
-		//shader.Dispatch(kernelHandle, L.Length, 1, 1);
 		for(int i =0; i<16;i++)
 		shader.Dispatch(kernelHandle1, SIZE, 1, 1);
 		XBuffer.GetData(X);
@@ -315,22 +309,7 @@ public class PBD_model: MonoBehaviour {
 		Collision_Handling();
 
 		mesh.vertices = X;
-
-
-
-
 		mesh.RecalculateNormals();
-		//sum_n = new int[mesh.vertices.Length];
-		//Sum_X = new Vector3[mesh.vertices.Length];
-
-
-
-		//XBuffer.GetData(X);
-		//VBuffer.GetData(V);
-
-		//V = V;
-		//mesh.vertices = X;
-		//mesh.RecalculateNormals();
 
 	}
 
